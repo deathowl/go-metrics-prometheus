@@ -1,4 +1,4 @@
-package metrics
+package promnetheusmetrics
 
 import (
 	"fmt"
