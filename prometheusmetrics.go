@@ -72,8 +72,10 @@ func (c *PrometheusConfig) UpdatePrometheusMetricsOnce() error {
 			c.gaugeFromNameAndValue(name, float64(metric.Value()))
 		case metrics.Histogram:
 			samples := metric.Snapshot().Sample().Values()
-			lastSample := samples[len(samples)-1]
-			c.gaugeFromNameAndValue(name, float64(lastSample))
+			if len(samples) > 0 {
+				lastSample := samples[len(samples)-1]
+				c.gaugeFromNameAndValue(name, float64(lastSample))
+			}
 		case metrics.Meter:
 		case metrics.Timer:
 			lastSample := metric.Snapshot().Rate1()
