@@ -68,6 +68,7 @@ func (c *PrometheusConfig) UpdatePrometheusMetricsOnce() error {
 		case metrics.Counter:
 			c.gaugeFromNameAndValue(name, float64(metric.Count()))
 		case metrics.Gauge:
+			c.gaugeFromNameAndValue(name, float64(metric.Value()))
 		case metrics.GaugeFloat64:
 			c.gaugeFromNameAndValue(name, float64(metric.Value()))
 		case metrics.Histogram:
@@ -77,6 +78,8 @@ func (c *PrometheusConfig) UpdatePrometheusMetricsOnce() error {
 				c.gaugeFromNameAndValue(name, float64(lastSample))
 			}
 		case metrics.Meter:
+			lastSample := metric.Snapshot().Rate1()
+			c.gaugeFromNameAndValue(name, float64(lastSample))
 		case metrics.Timer:
 			lastSample := metric.Snapshot().Rate1()
 			c.gaugeFromNameAndValue(name, float64(lastSample))
