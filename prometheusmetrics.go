@@ -38,6 +38,7 @@ func (c *PrometheusConfig) flattenKey(key string) string {
 	key = strings.Replace(key, ".", "_", -1)
 	key = strings.Replace(key, "-", "_", -1)
 	key = strings.Replace(key, "=", "_", -1)
+	key = strings.Replace(key, "/", "_", -1)
 	return key
 }
 
