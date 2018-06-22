@@ -86,9 +86,36 @@ func (c *PrometheusConfig) histogramFromName(name string, snap metrics.Histogram
 	g.WithLabelValues("perc95").Set(snap.Percentile(float64(95)))
 	g.WithLabelValues("perc99").Set(snap.Percentile(float64(99)))
 	g.WithLabelValues("perc999").Set(snap.Percentile(float64(99.9)))
+	g.WithLabelValues("sum").Set(float64(snap.Sum()))
+}
+
+func (c *PrometheusConfig) meterFromName(name string, snap metrics.Meter) {
+	key := fmt.Sprintf("%s_%s_%s", c.namespace, c.subsystem, name)
+	g, ok := c.gaugeVecs[key]
+	if !ok {
+		g = *prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: c.flattenKey(c.namespace),
+			Subsystem: c.flattenKey(c.subsystem),
+			Name:      c.flattenKey(name),
+			Help:      name,
+		},
+			[]string{
+				"type",
+			},
+		)
+		c.promRegistry.MustRegister(g)
+		c.gaugeVecs[key] = g
+	}
+
+	g.WithLabelValues("count").Set(float64(snap.Count()))
+	g.WithLabelValues("rate1").Set(snap.Rate1())
+	g.WithLabelValues("rate5").Set(snap.Rate5())
+	g.WithLabelValues("rate15").Set(snap.Rate15())
+	g.WithLabelValues("rate_mean").Set(snap.RateMean())
 }
 
 func (c *PrometheusConfig) UpdatePrometheusMetrics() {
+	c.UpdatePrometheusMetricsOnce()
 	for _ = range time.Tick(c.FlushInterval) {
 		c.UpdatePrometheusMetricsOnce()
 	}
@@ -107,8 +134,8 @@ func (c *PrometheusConfig) UpdatePrometheusMetricsOnce() error {
 			snap := metric.Snapshot()
 			c.histogramFromName(name, snap)
 		case metrics.Meter:
-			lastSample := metric.Snapshot().Rate1()
-			c.gaugeFromNameAndValue(name, float64(lastSample))
+			snap := metric.Snapshot()
+			c.meterFromName(name, snap)
 		case metrics.Timer:
 			lastSample := metric.Snapshot().Rate1()
 			c.gaugeFromNameAndValue(name, float64(lastSample))
