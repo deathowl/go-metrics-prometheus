@@ -87,6 +87,7 @@ func (c *PrometheusConfig) histogramFromName(name string, snap metrics.Histogram
 	g.WithLabelValues("perc99").Set(snap.Percentile(float64(99)))
 	g.WithLabelValues("perc999").Set(snap.Percentile(float64(99.9)))
 	g.WithLabelValues("sum").Set(float64(snap.Sum()))
+	g.WithLabelValues("variance").Set(float64(snap.Variance()))
 }
 
 func (c *PrometheusConfig) meterFromName(name string, snap metrics.Meter) {
@@ -108,6 +109,42 @@ func (c *PrometheusConfig) meterFromName(name string, snap metrics.Meter) {
 	}
 
 	g.WithLabelValues("count").Set(float64(snap.Count()))
+	g.WithLabelValues("rate1").Set(snap.Rate1())
+	g.WithLabelValues("rate5").Set(snap.Rate5())
+	g.WithLabelValues("rate15").Set(snap.Rate15())
+	g.WithLabelValues("rate_mean").Set(snap.RateMean())
+}
+
+func (c *PrometheusConfig) timerFromName(name string, snap metrics.Timer) {
+	key := fmt.Sprintf("%s_%s_%s", c.namespace, c.subsystem, name)
+	g, ok := c.gaugeVecs[key]
+	if !ok {
+		g = *prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: c.flattenKey(c.namespace),
+			Subsystem: c.flattenKey(c.subsystem),
+			Name:      c.flattenKey(name),
+			Help:      name,
+		},
+			[]string{
+				"type",
+			},
+		)
+		c.promRegistry.MustRegister(g)
+		c.gaugeVecs[key] = g
+	}
+
+	g.WithLabelValues("count").Set(float64(snap.Count()))
+	g.WithLabelValues("max").Set(float64(snap.Max()))
+	g.WithLabelValues("min").Set(float64(snap.Min()))
+	g.WithLabelValues("mean").Set(snap.Mean())
+	g.WithLabelValues("stddev").Set(snap.StdDev())
+	g.WithLabelValues("perc75").Set(snap.Percentile(float64(75)))
+	g.WithLabelValues("perc95").Set(snap.Percentile(float64(95)))
+	g.WithLabelValues("perc99").Set(snap.Percentile(float64(99)))
+	g.WithLabelValues("perc999").Set(snap.Percentile(float64(99.9)))
+	g.WithLabelValues("sum").Set(float64(snap.Sum()))
+	g.WithLabelValues("variance").Set(float64(snap.Variance()))
+
 	g.WithLabelValues("rate1").Set(snap.Rate1())
 	g.WithLabelValues("rate5").Set(snap.Rate5())
 	g.WithLabelValues("rate15").Set(snap.Rate15())
@@ -137,8 +174,8 @@ func (c *PrometheusConfig) UpdatePrometheusMetricsOnce() error {
 			snap := metric.Snapshot()
 			c.meterFromName(name, snap)
 		case metrics.Timer:
-			lastSample := metric.Snapshot().Rate1()
-			c.gaugeFromNameAndValue(name, float64(lastSample))
+			snap := metric.Snapshot()
+			c.timerFromName(name, snap)
 		}
 	})
 	return nil
