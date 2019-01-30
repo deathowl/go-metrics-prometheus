@@ -51,7 +51,7 @@ func (c *PrometheusConfig) gaugeFromNameAndValue(name string, val float64) {
 			Name:      c.flattenKey(name),
 			Help:      name,
 		})
-		c.promRegistry.MustRegister(g)
+		c.promRegistry.Register(g)
 		c.gauges[key] = g
 	}
 	g.Set(val)
