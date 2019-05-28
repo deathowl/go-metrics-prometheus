@@ -12,12 +12,12 @@ import (
 // Prometheus Exporter
 
 type PrometheusConfig struct {
-	namespace     string
-	Registry      metrics.Registry // Registry to be exported
-	subsystem     string
-	promRegistry  prometheus.Registerer //Prometheus registry
-	FlushInterval time.Duration         //interval to update prom metrics
-	gauges        map[string]prometheus.Gauge
+	namespace        string
+	Registry         metrics.Registry // Registry to be exported
+	subsystem        string
+	promRegistry     prometheus.Registerer //Prometheus registry
+	FlushInterval    time.Duration         //interval to update prom metrics
+	gauges           map[string]prometheus.Gauge
 	customMetrics    map[string]*CustomCollector
 	histogramBuckets []float64
 	timerBuckets     []float64
@@ -27,12 +27,12 @@ type PrometheusConfig struct {
 // Namespace and subsystem are applied to all produced metrics.
 func NewPrometheusProvider(r metrics.Registry, namespace string, subsystem string, promRegistry prometheus.Registerer, FlushInterval time.Duration) *PrometheusConfig {
 	return &PrometheusConfig{
-		namespace:     namespace,
-		subsystem:     subsystem,
-		Registry:      r,
-		promRegistry:  promRegistry,
-		FlushInterval: FlushInterval,
-		gauges:        make(map[string]prometheus.Gauge),
+		namespace:        namespace,
+		subsystem:        subsystem,
+		Registry:         r,
+		promRegistry:     promRegistry,
+		FlushInterval:    FlushInterval,
+		gauges:           make(map[string]prometheus.Gauge),
 		customMetrics:    make(map[string]*CustomCollector),
 		histogramBuckets: []float64{0.05, 0.1, 0.25, 0.50, 0.75, 0.9, 0.95, 0.99},
 		timerBuckets:     []float64{0.50, 0.95, 0.99, 0.999},
