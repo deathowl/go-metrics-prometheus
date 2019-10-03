@@ -2,10 +2,12 @@ package prometheusmetrics
 
 import (
 	"fmt"
+	"strings"
+	"sync"
+	"time"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rcrowley/go-metrics"
-	"strings"
-	"time"
 )
 
 // PrometheusConfig provides a container with config parameters for the
@@ -21,6 +23,7 @@ type PrometheusConfig struct {
 	customMetrics    map[string]*CustomCollector
 	histogramBuckets []float64
 	timerBuckets     []float64
+	mutex            *sync.Mutex
 }
 
 // NewPrometheusProvider returns a Provider that produces Prometheus metrics.
@@ -36,6 +39,7 @@ func NewPrometheusProvider(r metrics.Registry, namespace string, subsystem strin
 		customMetrics:    make(map[string]*CustomCollector),
 		histogramBuckets: []float64{0.05, 0.1, 0.25, 0.50, 0.75, 0.9, 0.95, 0.99},
 		timerBuckets:     []float64{0.50, 0.95, 0.99, 0.999},
+		mutex:            new(sync.Mutex),
 	}
 }
 
@@ -82,7 +86,7 @@ func (c *PrometheusConfig) histogramFromNameAndMetric(name string, goMetric inte
 
 	collector, ok := c.customMetrics[key]
 	if !ok {
-		collector = &CustomCollector{}
+		collector = NewCustomCollector(c.mutex)
 		c.promRegistry.MustRegister(collector)
 		c.customMetrics[key] = collector
 	}
@@ -110,7 +114,6 @@ func (c *PrometheusConfig) histogramFromNameAndMetric(name string, goMetric inte
 	}
 
 	bucketVals := make(map[float64]uint64)
-
 	for ii, bucket := range buckets {
 		bucketVals[bucket] = uint64(ps[ii])
 	}
@@ -126,15 +129,15 @@ func (c *PrometheusConfig) histogramFromNameAndMetric(name string, goMetric inte
 		map[string]string{},
 	)
 
-	constHistogram, err := prometheus.NewConstHistogram(
+	if constHistogram, err := prometheus.NewConstHistogram(
 		desc,
 		count,
 		sum,
 		bucketVals,
-	)
-
-	if err == nil {
+	); err == nil {
+		c.mutex.Lock()
 		collector.metric = constHistogram
+		c.mutex.Unlock()
 	}
 }
 
@@ -179,10 +182,20 @@ type CustomCollector struct {
 	prometheus.Collector
 
 	metric prometheus.Metric
+	mutex  *sync.Mutex
+}
+
+func NewCustomCollector(mutex *sync.Mutex) *CustomCollector {
+	return &CustomCollector{
+		mutex: mutex,
+	}
 }
 
 func (c *CustomCollector) Collect(ch chan<- prometheus.Metric) {
-	ch <- c.metric
+	c.mutex.Lock()
+	val := c.metric
+	ch <- val
+	c.mutex.Unlock()
 }
 
 func (p *CustomCollector) Describe(ch chan<- *prometheus.Desc) {
