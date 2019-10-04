@@ -193,8 +193,10 @@ func NewCustomCollector(mutex *sync.Mutex) *CustomCollector {
 
 func (c *CustomCollector) Collect(ch chan<- prometheus.Metric) {
 	c.mutex.Lock()
-	val := c.metric
-	ch <- val
+	if c.metric != nil {
+		val := c.metric
+		ch <- val
+	}
 	c.mutex.Unlock()
 }
 
