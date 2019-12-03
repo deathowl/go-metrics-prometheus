@@ -8,4 +8,4 @@ require (
 )
 
 // wait for PR
-replace github.com/rcrowley/go-metrics => ../go-metrics
+replace github.com/rcrowley/go-metrics => github.com/subchord/go-metrics v0.0.0-20191203144307-c307d4e4b0b5
