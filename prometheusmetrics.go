@@ -91,6 +91,7 @@ func (c *PrometheusConfig) histogramFromNameAndMetric(name string, goMetric inte
 	var count uint64
 	var sum float64
 	var typeName string
+	bucketVals := make(map[float64]uint64)
 
 	switch metric := goMetric.(type) {
 	case metrics.Histogram:
@@ -99,20 +100,28 @@ func (c *PrometheusConfig) histogramFromNameAndMetric(name string, goMetric inte
 		count = uint64(snapshot.Count())
 		sum = float64(snapshot.Sum())
 		typeName = "histogram"
+		for ii, bucket := range buckets {
+			bucketVals[bucket] = uint64(ps[ii])
+		}
 	case metrics.Timer:
 		snapshot := metric.Snapshot()
 		ps = snapshot.Percentiles(buckets)
 		count = uint64(snapshot.Count())
 		sum = float64(snapshot.Sum())
 		typeName = "timer"
+		for ii, bucket := range buckets {
+			bucketVals[bucket] = uint64(ps[ii])
+		}
+	case metrics.Distribution:
+		snapshot := metric.Snapshot()
+		count = uint64(snapshot.Count())
+		sum = float64(snapshot.Sum())
+		typeName = "distribution"
+		for i, v := range snapshot.Buckets() {
+			bucketVals[i] = uint64(v)
+		}
 	default:
 		panic(fmt.Sprintf("unexpected metric type %T", goMetric))
-	}
-
-	bucketVals := make(map[float64]uint64)
-
-	for ii, bucket := range buckets {
-		bucketVals[bucket] = uint64(ps[ii])
 	}
 
 	desc := prometheus.NewDesc(
@@ -169,6 +178,8 @@ func (c *PrometheusConfig) UpdatePrometheusMetricsOnce() error {
 			c.gaugeFromNameAndValue(name, float64(lastSample))
 
 			c.histogramFromNameAndMetric(name, metric, c.timerBuckets)
+		case metrics.Distribution:
+			c.histogramFromNameAndMetric(name, metric, nil)
 		}
 	})
 	return nil
