@@ -21,6 +21,7 @@ type PrometheusConfig struct {
 	customMetrics    map[string]*CustomCollector
 	histogramBuckets []float64
 	timerBuckets     []float64
+	vectorCounters   map[string]*prometheus.CounterVec
 }
 
 // NewPrometheusProvider returns a Provider that produces Prometheus metrics.
@@ -34,6 +35,7 @@ func NewPrometheusProvider(r metrics.Registry, namespace string, subsystem strin
 		FlushInterval:    FlushInterval,
 		gauges:           make(map[string]prometheus.Gauge),
 		customMetrics:    make(map[string]*CustomCollector),
+		vectorCounters:   make(map[string]*prometheus.CounterVec),
 		histogramBuckets: []float64{0.05, 0.1, 0.25, 0.50, 0.75, 0.9, 0.95, 0.99},
 		timerBuckets:     []float64{0.50, 0.95, 0.99, 0.999},
 	}
@@ -75,6 +77,37 @@ func (c *PrometheusConfig) gaugeFromNameAndValue(name string, val float64) {
 		c.gauges[key] = g
 	}
 	g.Set(val)
+}
+
+func (c *PrometheusConfig) vectorCounterFromNameAndMetric(name string, metric metrics.VectorCounter) {
+	key := c.createKey(name)
+	vc, ok := c.vectorCounters[key]
+	if !ok {
+		vc = prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: c.namespace,
+			Subsystem: c.subsystem,
+			Name:      name,
+		}, []string{"label"})
+		c.vectorCounters[key] = vc
+		c.promRegistry.MustRegister(vc)
+	}
+
+	vc.Reset()
+
+	labels := make([]string, len(metric.GetAll()))
+	idx := 0
+	for s := range metric.GetAll() {
+		labels[idx] = s
+		idx++
+	}
+
+	for _, label := range labels {
+		counter,err := vc.GetMetricWith(prometheus.Labels{"label": label})
+		if err != nil {
+			panic(err)
+		}
+		counter.Add(float64(metric.Get(label).Count()))
+	}
 }
 
 func (c *PrometheusConfig) histogramFromNameAndMetric(name string, goMetric interface{}, buckets []float64) {
@@ -158,6 +191,8 @@ func (c *PrometheusConfig) UpdatePrometheusMetricsOnce() error {
 		switch metric := i.(type) {
 		case metrics.Counter:
 			c.gaugeFromNameAndValue(name, float64(metric.Count()))
+		case metrics.VectorCounter:
+			c.vectorCounterFromNameAndMetric(name, metric)
 		case metrics.Gauge:
 			c.gaugeFromNameAndValue(name, float64(metric.Value()))
 		case metrics.GaugeFloat64:
