@@ -3,7 +3,7 @@ package prometheusmetrics
 import (
 	"fmt"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/rcrowley/go-metrics"
+	"github.com/subchord/go-metrics"
 	"strings"
 	"time"
 )
