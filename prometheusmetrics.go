@@ -84,9 +84,9 @@ func (c *PrometheusConfig) vectorCounterFromNameAndMetric(name string, metric me
 	vc, ok := c.vectorCounters[key]
 	if !ok {
 		vc = prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: c.namespace,
-			Subsystem: c.subsystem,
-			Name:      name,
+			Namespace: c.flattenKey(c.namespace),
+			Subsystem: c.flattenKey(c.subsystem),
+			Name:      c.flattenKey(name),
 		}, []string{"label"})
 		c.vectorCounters[key] = vc
 		c.promRegistry.MustRegister(vc)
@@ -102,7 +102,7 @@ func (c *PrometheusConfig) vectorCounterFromNameAndMetric(name string, metric me
 	}
 
 	for _, label := range labels {
-		counter,err := vc.GetMetricWith(prometheus.Labels{"label": label})
+		counter, err := vc.GetMetricWith(prometheus.Labels{"label": label})
 		if err != nil {
 			panic(err)
 		}
