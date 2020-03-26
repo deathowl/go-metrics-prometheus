@@ -1,4 +1,4 @@
-module github.com/tumani1/go-metrics-prometheus
+module github.com/deathowl/go-metrics-prometheus
 
 go 1.13
 
