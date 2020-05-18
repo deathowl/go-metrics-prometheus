@@ -125,7 +125,7 @@ func (c *PrometheusConfig) histogramFromNameAndMetric(name string, goMetric inte
 			c.flattenKey(c.subsystem),
 			fmt.Sprintf("%s_%s", c.flattenKey(name), typeName),
 		),
-		name,
+		c.flattenKey(name),
 		[]string{},
 		map[string]string{},
 	)
