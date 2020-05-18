@@ -5,6 +5,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/subchord/go-metrics"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -22,6 +23,7 @@ type PrometheusConfig struct {
 	histogramBuckets []float64
 	timerBuckets     []float64
 	vectorCounters   map[string]*prometheus.CounterVec
+	mutex            *sync.Mutex
 }
 
 // NewPrometheusProvider returns a Provider that produces Prometheus metrics.
@@ -38,6 +40,7 @@ func NewPrometheusProvider(r metrics.Registry, namespace string, subsystem strin
 		vectorCounters:   make(map[string]*prometheus.CounterVec),
 		histogramBuckets: []float64{0.05, 0.1, 0.25, 0.50, 0.75, 0.9, 0.95, 0.99},
 		timerBuckets:     []float64{0.50, 0.95, 0.99, 0.999},
+		mutex:            new(sync.Mutex),
 	}
 }
 
@@ -56,6 +59,7 @@ func (c *PrometheusConfig) flattenKey(key string) string {
 	key = strings.Replace(key, ".", "_", -1)
 	key = strings.Replace(key, "-", "_", -1)
 	key = strings.Replace(key, "=", "_", -1)
+	key = strings.Replace(key, "/", "_", -1)
 	return key
 }
 
@@ -115,7 +119,7 @@ func (c *PrometheusConfig) histogramFromNameAndMetric(name string, goMetric inte
 
 	collector, ok := c.customMetrics[key]
 	if !ok {
-		collector = &CustomCollector{}
+		collector = NewCustomCollector(c.mutex)
 		c.promRegistry.MustRegister(collector)
 		c.customMetrics[key] = collector
 	}
@@ -163,20 +167,20 @@ func (c *PrometheusConfig) histogramFromNameAndMetric(name string, goMetric inte
 			c.flattenKey(c.subsystem),
 			fmt.Sprintf("%s_%s", c.flattenKey(name), typeName),
 		),
-		name,
+		c.flattenKey(name),
 		[]string{},
 		map[string]string{},
 	)
 
-	constHistogram, err := prometheus.NewConstHistogram(
+	if constHistogram, err := prometheus.NewConstHistogram(
 		desc,
 		count,
 		sum,
 		bucketVals,
-	)
-
-	if err == nil {
+	); err == nil {
+		c.mutex.Lock()
 		collector.metric = constHistogram
+		c.mutex.Unlock()
 	}
 }
 
@@ -225,10 +229,22 @@ type CustomCollector struct {
 	prometheus.Collector
 
 	metric prometheus.Metric
+	mutex  *sync.Mutex
+}
+
+func NewCustomCollector(mutex *sync.Mutex) *CustomCollector {
+	return &CustomCollector{
+		mutex: mutex,
+	}
 }
 
 func (c *CustomCollector) Collect(ch chan<- prometheus.Metric) {
-	ch <- c.metric
+	c.mutex.Lock()
+	if c.metric != nil {
+		val := c.metric
+		ch <- val
+	}
+	c.mutex.Unlock()
 }
 
 func (p *CustomCollector) Describe(ch chan<- *prometheus.Desc) {

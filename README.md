@@ -11,9 +11,9 @@ Usage:
 	import "github.com/deathowl/go-metrics-prometheus"
 	import "github.com/prometheus/client_golang/prometheus"
 
-    	prometheusRegistry := prometheus.NewRegistry()
         metricsRegistry := metrics.NewRegistry()
-        pClient := NewPrometheusProvider(metricsRegistry, "test", "subsys", prometheusRegistry, 1*time.Second)
-        go pClient.UpdatePrometheusMetrics()
+	prometheusClient := prometheusmetrics.NewPrometheusProvider(
+	   metrics.DefaultRegistry, "whatever","something",prometheus.DefaultRegisterer, 1*time.Second)
+        go prometheusClient.UpdatePrometheusMetrics()
 ```
 
