@@ -1,8 +1,8 @@
-module github.com/deathowl/go-metrics-prometheus
+module github.com/subchord/go-metrics-prometheus
 
 go 1.13
 
 require (
-	github.com/prometheus/client_golang v1.1.0
-	github.com/rcrowley/go-metrics v0.0.0-20190826022208-cac0b30c2563
+	github.com/prometheus/client_golang v1.2.1
+	github.com/subchord/go-metrics v1.0.1
 )

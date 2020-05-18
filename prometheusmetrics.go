@@ -2,12 +2,11 @@ package prometheusmetrics
 
 import (
 	"fmt"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/subchord/go-metrics"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/rcrowley/go-metrics"
 )
 
 // PrometheusConfig provides a container with config parameters for the
@@ -23,6 +22,7 @@ type PrometheusConfig struct {
 	customMetrics    map[string]*CustomCollector
 	histogramBuckets []float64
 	timerBuckets     []float64
+	vectorCounters   map[string]*prometheus.CounterVec
 	mutex            *sync.Mutex
 }
 
@@ -37,6 +37,7 @@ func NewPrometheusProvider(r metrics.Registry, namespace string, subsystem strin
 		FlushInterval:    FlushInterval,
 		gauges:           make(map[string]prometheus.Gauge),
 		customMetrics:    make(map[string]*CustomCollector),
+		vectorCounters:   make(map[string]*prometheus.CounterVec),
 		histogramBuckets: []float64{0.05, 0.1, 0.25, 0.50, 0.75, 0.9, 0.95, 0.99},
 		timerBuckets:     []float64{0.50, 0.95, 0.99, 0.999},
 		mutex:            new(sync.Mutex),
@@ -82,6 +83,37 @@ func (c *PrometheusConfig) gaugeFromNameAndValue(name string, val float64) {
 	g.Set(val)
 }
 
+func (c *PrometheusConfig) vectorCounterFromNameAndMetric(name string, metric metrics.VectorCounter) {
+	key := c.createKey(name)
+	vc, ok := c.vectorCounters[key]
+	if !ok {
+		vc = prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: c.flattenKey(c.namespace),
+			Subsystem: c.flattenKey(c.subsystem),
+			Name:      c.flattenKey(name),
+		}, []string{"label"})
+		c.vectorCounters[key] = vc
+		c.promRegistry.MustRegister(vc)
+	}
+
+	vc.Reset()
+
+	labels := make([]string, len(metric.GetAll()))
+	idx := 0
+	for s := range metric.GetAll() {
+		labels[idx] = s
+		idx++
+	}
+
+	for _, label := range labels {
+		counter, err := vc.GetMetricWith(prometheus.Labels{"label": label})
+		if err != nil {
+			panic(err)
+		}
+		counter.Add(float64(metric.Get(label).Count()))
+	}
+}
+
 func (c *PrometheusConfig) histogramFromNameAndMetric(name string, goMetric interface{}, buckets []float64) {
 	key := c.createKey(name)
 
@@ -96,6 +128,7 @@ func (c *PrometheusConfig) histogramFromNameAndMetric(name string, goMetric inte
 	var count uint64
 	var sum float64
 	var typeName string
+	bucketVals := make(map[float64]uint64)
 
 	switch metric := goMetric.(type) {
 	case metrics.Histogram:
@@ -104,19 +137,28 @@ func (c *PrometheusConfig) histogramFromNameAndMetric(name string, goMetric inte
 		count = uint64(snapshot.Count())
 		sum = float64(snapshot.Sum())
 		typeName = "histogram"
+		for ii, bucket := range buckets {
+			bucketVals[bucket] = uint64(ps[ii])
+		}
 	case metrics.Timer:
 		snapshot := metric.Snapshot()
 		ps = snapshot.Percentiles(buckets)
 		count = uint64(snapshot.Count())
 		sum = float64(snapshot.Sum())
 		typeName = "timer"
+		for ii, bucket := range buckets {
+			bucketVals[bucket] = uint64(ps[ii])
+		}
+	case metrics.Distribution:
+		snapshot := metric.Snapshot()
+		count = uint64(snapshot.Count())
+		sum = float64(snapshot.Sum())
+		typeName = "distribution"
+		for i, v := range snapshot.Buckets() {
+			bucketVals[i] = uint64(v)
+		}
 	default:
 		panic(fmt.Sprintf("unexpected metric type %T", goMetric))
-	}
-
-	bucketVals := make(map[float64]uint64)
-	for ii, bucket := range buckets {
-		bucketVals[bucket] = uint64(ps[ii])
 	}
 
 	desc := prometheus.NewDesc(
@@ -153,6 +195,8 @@ func (c *PrometheusConfig) UpdatePrometheusMetricsOnce() error {
 		switch metric := i.(type) {
 		case metrics.Counter:
 			c.gaugeFromNameAndValue(name, float64(metric.Count()))
+		case metrics.VectorCounter:
+			c.vectorCounterFromNameAndMetric(name, metric)
 		case metrics.Gauge:
 			c.gaugeFromNameAndValue(name, float64(metric.Value()))
 		case metrics.GaugeFloat64:
@@ -173,6 +217,8 @@ func (c *PrometheusConfig) UpdatePrometheusMetricsOnce() error {
 			c.gaugeFromNameAndValue(name, float64(lastSample))
 
 			c.histogramFromNameAndMetric(name, metric, c.timerBuckets)
+		case metrics.Distribution:
+			c.histogramFromNameAndMetric(name, metric, nil)
 		}
 	})
 	return nil
