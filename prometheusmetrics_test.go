@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rcrowley/go-metrics"
+	"math"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -108,17 +110,37 @@ func TestPrometheusMeterGetUpdated(t *testing.T) {
 	if len(metrics) == 0 {
 		t.Fatalf("prometheus was unable to register the metric")
 	}
-	serialized := fmt.Sprint(metrics[0])
-	expected := fmt.Sprintf("name:\"test_subsys_meter\" help:\"meter\" type:GAUGE metric:<gauge:<value:%.16f > > ", gm.Rate1())
-	if serialized != expected {
-		t.Fatalf("Go-metrics value and prometheus metrics value do not match")
+
+	metricValues := make(map[string]interface{})
+	for _, metric := range metrics {
+		metricValues[metric.GetName()] = math.Round(metric.GetMetric()[0].Gauge.GetValue())
+	}
+
+	snapshot := gm.Snapshot()
+	expectedValues := map[string]interface{}{
+		"test_subsys_meter_count":     float64(snapshot.Count()),
+		"test_subsys_meter_rate1":     math.Round(snapshot.Rate1()),
+		"test_subsys_meter_rate15":    math.Round(snapshot.Rate15()),
+		"test_subsys_meter_rate5":     math.Round(snapshot.Rate5()),
+		"test_subsys_meter_rate_mean": math.Round(snapshot.RateMean()),
+	}
+
+	if !reflect.DeepEqual(metricValues, expectedValues) {
+		t.Fatalf(
+			"Go-metrics value and prometheus metrics value do not match. Expected: %v, actual: %v",
+			expectedValues,
+			metricValues,
+		)
 	}
 }
 
 func TestPrometheusHistogramGetUpdated(t *testing.T) {
 	prometheusRegistry := prometheus.NewRegistry()
 	metricsRegistry := metrics.NewRegistry()
-	pClient := NewPrometheusProvider(metricsRegistry, "test", "subsys", prometheusRegistry, 1*time.Second)
+	pClient := NewPrometheusProvider(
+		metricsRegistry, "test", "subsys",
+		prometheusRegistry, 1*time.Second,
+	)
 	// values := make([]int64, 0)
 	//sample := metrics.HistogramSnapshot{metrics.NewSampleSnapshot(int64(len(values)), values)}
 	gm := metrics.NewHistogram(metrics.NewUniformSample(1028))
@@ -145,5 +167,54 @@ func TestPrometheusHistogramGetUpdated(t *testing.T) {
 	expected := `name:"test_subsys_metric_histogram" help:"metric" type:HISTOGRAM metric:<histogram:<sample_count:100 sample_sum:129 bucket:<cumulative_count:1 upper_bound:0.05 > bucket:<cumulative_count:1 upper_bound:0.1 > bucket:<cumulative_count:1 upper_bound:0.25 > bucket:<cumulative_count:1 upper_bound:0.5 > bucket:<cumulative_count:1 upper_bound:0.75 > bucket:<cumulative_count:1 upper_bound:0.9 > bucket:<cumulative_count:5 upper_bound:0.95 > bucket:<cumulative_count:9 upper_bound:0.99 > > > `
 	if serialized != expected {
 		t.Fatalf("Go-metrics value and prometheus metrics value for max do not match:\n+ %s\n- %s", serialized, expected)
+	}
+}
+
+func TestPrometheusTimerGetUpdated(t *testing.T) {
+	prometheusRegistry := prometheus.NewRegistry()
+	metricsRegistry := metrics.NewRegistry()
+	pClient := NewPrometheusProvider(
+		metricsRegistry, "test", "subsys",
+		prometheusRegistry, 1*time.Second,
+	)
+	timer := metrics.NewTimer()
+	metricsRegistry.Register("timer", timer)
+	timer.Update(2)
+	go pClient.UpdatePrometheusMetrics()
+	timer.Update(13)
+	timer.Update(56)
+	time.Sleep(5 * time.Second)
+	metrics, _ := prometheusRegistry.Gather()
+	if len(metrics) == 0 {
+		t.Fatalf("prometheus was unable to register the metric")
+	}
+
+	metricValues := make(map[string]interface{})
+	for _, metric := range metrics {
+		metricValues[metric.GetName()] = math.Round(metric.GetMetric()[0].Gauge.GetValue())
+	}
+
+	snapshot := timer.Snapshot()
+	expectedValues := map[string]interface{}{
+		"test_subsys_timer_count":     float64(snapshot.Count()),
+		"test_subsys_timer_max":       float64(snapshot.Max()),
+		"test_subsys_timer_mean":      math.Round(snapshot.Mean()),
+		"test_subsys_timer_min":       float64(snapshot.Min()),
+		"test_subsys_timer_rate1":     math.Round(snapshot.Rate1()),
+		"test_subsys_timer_rate15":    math.Round(snapshot.Rate15()),
+		"test_subsys_timer_rate5":     math.Round(snapshot.Rate5()),
+		"test_subsys_timer_rate_mean": math.Round(snapshot.RateMean()),
+		"test_subsys_timer_std_dev":   math.Round(snapshot.StdDev()),
+		"test_subsys_timer_sum":       float64(snapshot.Sum()),
+		"test_subsys_timer_variance":  math.Round(snapshot.Variance()),
+		"test_subsys_timer_timer":     float64(0),
+	}
+
+	if !reflect.DeepEqual(metricValues, expectedValues) {
+		t.Fatalf(
+			"Go-metrics value and prometheus metrics value do not match. Expected: %v, actual: %v",
+			expectedValues,
+			metricValues,
+		)
 	}
 }
