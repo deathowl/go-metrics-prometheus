@@ -1,0 +1,36 @@
+name: test
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    paths:
+      - '.github/workflows/test.yml'
+      - '**Makefile'
+      - '**.go'
+      - 'go.mod'
+      - 'go.sum'
+jobs:
+  build_and_test:
+    name: test on ubuntu-linux
+    runs-on: ubuntu-latest
+    steps:
+
+    - name: Set up Go 1.16
+      uses: actions/setup-go@v2
+      with:
+        go-version: 1.16
+      id: go
+
+    - name: Check out code
+      uses: actions/checkout@v2
+
+    - uses: actions/cache@v2
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Run unit tests
+      run: make test
