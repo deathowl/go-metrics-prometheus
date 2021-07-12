@@ -102,19 +102,29 @@ func TestPrometheusMeterGetUpdated(t *testing.T) {
 	pClient := NewPrometheusProvider(metricsRegistry, "test", "subsys", prometheusRegistry, time.Second)
 	gm := metrics.NewMeter()
 	metricsRegistry.Register("meter", gm)
-	gm.Mark(2)
-	go pClient.UpdatePrometheusMetrics()
 	gm.Mark(10)
-	time.Sleep(10 * time.Second)
-	gm.Mark(3)
+	// The meter ticker runs on a 5 second ticker, if we want to see rates with non zero values we must wait at least 5 seconds
+	// before updating again
+	time.Sleep(5100 * time.Millisecond)
+	gm.Mark(5)
+
+	// Ensure the prom registry has the most recent information
+	pClient.UpdatePrometheusMetricsOnce()
 	metrics, _ := prometheusRegistry.Gather()
+	snap := gm.Snapshot()
+
 	if len(metrics) == 0 {
 		t.Fatalf("prometheus was unable to register the metric")
 	}
 
+	expected := fmt.Sprintf(
+		"name:\"test_subsys_meter\" help:\"meter\" type:GAUGE metric:<label:<name:\"type\" value:\"count\" > gauge:<value:%v > > metric:<label:<name:\"type\" value:\"rate1\" > gauge:<value:%v > > metric:<label:<name:\"type\" value:\"rate15\" > gauge:<value:%v > > metric:<label:<name:\"type\" value:\"rate5\" > gauge:<value:%v > > metric:<label:<name:\"type\" value:\"rate_mean\" > gauge:<value:%v > > ",
+		snap.Count(), snap.Rate1(), snap.Rate15(), snap.Rate5(), snap.RateMean(),
+	)
+
 	assert.Equal(
 		t,
-		fmt.Sprintf("name:\"test_subsys_meter\" help:\"meter\" type:GAUGE metric:<label:<name:\"type\" value:\"count\" > gauge:<value:%v > > metric:<label:<name:\"type\" value:\"rate1\" > gauge:<value:%v > > metric:<label:<name:\"type\" value:\"rate15\" > gauge:<value:%v > > metric:<label:<name:\"type\" value:\"rate5\" > gauge:<value:%v > > metric:<label:<name:\"type\" value:\"rate_mean\" > gauge:<value:%v > > ", gm.Count(), gm.Rate1(), gm.Rate15(), gm.Rate5(), gm.RateMean()),
+		expected,
 		fmt.Sprint(metrics[0]),
 		"Go-metrics value and prometheus metrics value do not match",
 	)
