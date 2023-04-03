@@ -24,11 +24,12 @@ type PrometheusConfig struct {
 	histogramBuckets []float64
 	timerBuckets     []float64
 	mutex            *sync.Mutex
+	constLabels      map[string]string
 }
 
 // NewPrometheusProvider returns a Provider that produces Prometheus metrics.
 // Namespace and subsystem are applied to all produced metrics.
-func NewPrometheusProvider(r metrics.Registry, namespace string, subsystem string, promRegistry prometheus.Registerer, FlushInterval time.Duration) *PrometheusConfig {
+func NewPrometheusProvider(r metrics.Registry, namespace string, subsystem string, promRegistry prometheus.Registerer, FlushInterval time.Duration, constLabels map[string]string) *PrometheusConfig {
 	return &PrometheusConfig{
 		namespace:        namespace,
 		subsystem:        subsystem,
@@ -40,6 +41,7 @@ func NewPrometheusProvider(r metrics.Registry, namespace string, subsystem strin
 		histogramBuckets: []float64{0.05, 0.1, 0.25, 0.50, 0.75, 0.9, 0.95, 0.99},
 		timerBuckets:     []float64{0.50, 0.95, 0.99, 0.999},
 		mutex:            new(sync.Mutex),
+		constLabels:      constLabels,
 	}
 }
 
@@ -71,10 +73,11 @@ func (c *PrometheusConfig) gaugeFromNameAndValue(name string, val float64) {
 	g, ok := c.gauges[key]
 	if !ok {
 		g = prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace: c.flattenKey(c.namespace),
-			Subsystem: c.flattenKey(c.subsystem),
-			Name:      c.flattenKey(name),
-			Help:      name,
+			Namespace:   c.flattenKey(c.namespace),
+			Subsystem:   c.flattenKey(c.subsystem),
+			Name:        c.flattenKey(name),
+			Help:        name,
+			ConstLabels: c.constLabels,
 		})
 		c.promRegistry.Register(g)
 		c.gauges[key] = g
@@ -127,7 +130,7 @@ func (c *PrometheusConfig) histogramFromNameAndMetric(name string, goMetric inte
 		),
 		c.flattenKey(name),
 		[]string{},
-		map[string]string{},
+		c.constLabels,
 	)
 
 	if constHistogram, err := prometheus.NewConstHistogram(

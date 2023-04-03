@@ -12,7 +12,7 @@ import (
 
 func TestPrometheusRegistration(t *testing.T) {
 	defaultRegistry := prometheus.DefaultRegisterer
-	pClient := NewPrometheusProvider(metrics.DefaultRegistry, "test", "subsys", defaultRegistry, 1*time.Second)
+	pClient := NewPrometheusProvider(metrics.DefaultRegistry, "test", "subsys", defaultRegistry, 1*time.Second, nil)
 	if pClient.promRegistry != defaultRegistry {
 		t.Fatalf("Failed to pass prometheus registry to go-metrics provider")
 	}
@@ -21,7 +21,7 @@ func TestPrometheusRegistration(t *testing.T) {
 func TestUpdatePrometheusMetricsOnce(t *testing.T) {
 	prometheusRegistry := prometheus.NewRegistry()
 	metricsRegistry := metrics.NewRegistry()
-	pClient := NewPrometheusProvider(metricsRegistry, "test", "subsys", prometheusRegistry, 1*time.Second)
+	pClient := NewPrometheusProvider(metricsRegistry, "test", "subsys", prometheusRegistry, 1*time.Second, nil)
 	metricsRegistry.Register("counter", metrics.NewCounter())
 	pClient.UpdatePrometheusMetricsOnce()
 	gauge := prometheus.NewGauge(prometheus.GaugeOpts{
@@ -40,7 +40,7 @@ func TestUpdatePrometheusMetricsOnce(t *testing.T) {
 func TestUpdatePrometheusMetrics(t *testing.T) {
 	prometheusRegistry := prometheus.NewRegistry()
 	metricsRegistry := metrics.NewRegistry()
-	pClient := NewPrometheusProvider(metricsRegistry, "test", "subsys", prometheusRegistry, 1*time.Second)
+	pClient := NewPrometheusProvider(metricsRegistry, "test", "subsys", prometheusRegistry, 1*time.Second, nil)
 	metricsRegistry.Register("counter", metrics.NewCounter())
 	go pClient.UpdatePrometheusMetrics()
 	time.Sleep(2 * time.Second)
@@ -60,7 +60,7 @@ func TestUpdatePrometheusMetrics(t *testing.T) {
 func TestPrometheusCounterGetUpdated(t *testing.T) {
 	prometheusRegistry := prometheus.NewRegistry()
 	metricsRegistry := metrics.NewRegistry()
-	pClient := NewPrometheusProvider(metricsRegistry, "test", "subsys", prometheusRegistry, 1*time.Second)
+	pClient := NewPrometheusProvider(metricsRegistry, "test", "subsys", prometheusRegistry, 1*time.Second, nil)
 	cntr := metrics.NewCounter()
 	metricsRegistry.Register("counter", cntr)
 	cntr.Inc(2)
@@ -75,10 +75,30 @@ func TestPrometheusCounterGetUpdated(t *testing.T) {
 	}
 }
 
+func TestPrometheusCounterGetUpdatedWithLabels(t *testing.T) {
+	prometheusRegistry := prometheus.NewRegistry()
+	metricsRegistry := metrics.NewRegistry()
+	pClient := NewPrometheusProvider(metricsRegistry, "test", "subsys", prometheusRegistry, 1*time.Second, map[string]string{"name": "value"})
+	cntr := metrics.NewCounter()
+	metricsRegistry.Register("counter", cntr)
+	cntr.Inc(2)
+	go pClient.UpdatePrometheusMetrics()
+	cntr.Inc(13)
+	time.Sleep(5 * time.Second)
+	metrics, _ := prometheusRegistry.Gather()
+	serialized := fmt.Sprint(metrics[0])
+	expected := fmt.Sprintf("name:\"test_subsys_counter\" help:\"counter\" type:GAUGE metric:<label:<name:\"name\" value:\"value\" > gauge:<value:%d > > ", cntr.Count())
+	if serialized != expected {
+		fmt.Println(serialized)
+		fmt.Println(expected)
+		t.Fatalf("Go-metrics value and prometheus metrics value do not match")
+	}
+}
+
 func TestPrometheusGaugeGetUpdated(t *testing.T) {
 	prometheusRegistry := prometheus.NewRegistry()
 	metricsRegistry := metrics.NewRegistry()
-	pClient := NewPrometheusProvider(metricsRegistry, "test", "subsys", prometheusRegistry, 1*time.Second)
+	pClient := NewPrometheusProvider(metricsRegistry, "test", "subsys", prometheusRegistry, 1*time.Second, nil)
 	gm := metrics.NewGauge()
 	metricsRegistry.Register("gauge", gm)
 	gm.Update(2)
@@ -96,10 +116,31 @@ func TestPrometheusGaugeGetUpdated(t *testing.T) {
 	}
 }
 
+func TestPrometheusGaugeGetUpdatedWithLabels(t *testing.T) {
+	prometheusRegistry := prometheus.NewRegistry()
+	metricsRegistry := metrics.NewRegistry()
+	pClient := NewPrometheusProvider(metricsRegistry, "test", "subsys", prometheusRegistry, 1*time.Second, map[string]string{"name": "value"})
+	gm := metrics.NewGauge()
+	metricsRegistry.Register("gauge", gm)
+	gm.Update(2)
+	go pClient.UpdatePrometheusMetrics()
+	gm.Update(13)
+	time.Sleep(5 * time.Second)
+	metrics, _ := prometheusRegistry.Gather()
+	if len(metrics) == 0 {
+		t.Fatalf("prometheus was unable to register the metric")
+	}
+	serialized := fmt.Sprint(metrics[0])
+	expected := fmt.Sprintf("name:\"test_subsys_gauge\" help:\"gauge\" type:GAUGE metric:<label:<name:\"name\" value:\"value\" > gauge:<value:%d > > ", gm.Value())
+	if serialized != expected {
+		t.Fatalf("Go-metrics value and prometheus metrics value do not match")
+	}
+}
+
 func TestPrometheusMeterGetUpdated(t *testing.T) {
 	prometheusRegistry := prometheus.NewRegistry()
 	metricsRegistry := metrics.NewRegistry()
-	pClient := NewPrometheusProvider(metricsRegistry, "test", "subsys", prometheusRegistry, 1*time.Second)
+	pClient := NewPrometheusProvider(metricsRegistry, "test", "subsys", prometheusRegistry, 1*time.Second, nil)
 	gm := metrics.NewMeter()
 	metricsRegistry.Register("meter", gm)
 	gm.Mark(2)
@@ -140,6 +181,7 @@ func TestPrometheusHistogramGetUpdated(t *testing.T) {
 	pClient := NewPrometheusProvider(
 		metricsRegistry, "test", "subsys",
 		prometheusRegistry, 1*time.Second,
+		nil,
 	)
 	// values := make([]int64, 0)
 	//sample := metrics.HistogramSnapshot{metrics.NewSampleSnapshot(int64(len(values)), values)}
@@ -170,12 +212,50 @@ func TestPrometheusHistogramGetUpdated(t *testing.T) {
 	}
 }
 
+func TestPrometheusHistogramGetUpdatedWithLabels(t *testing.T) {
+	prometheusRegistry := prometheus.NewRegistry()
+	metricsRegistry := metrics.NewRegistry()
+	pClient := NewPrometheusProvider(
+		metricsRegistry, "test", "subsys",
+		prometheusRegistry, 1*time.Second,
+		map[string]string{"name": "value"},
+	)
+	// values := make([]int64, 0)
+	//sample := metrics.HistogramSnapshot{metrics.NewSampleSnapshot(int64(len(values)), values)}
+	gm := metrics.NewHistogram(metrics.NewUniformSample(1028))
+	metricsRegistry.Register("metric", gm)
+
+	for ii := 0; ii < 94; ii++ {
+		gm.Update(1)
+	}
+	for ii := 0; ii < 5; ii++ {
+		gm.Update(5)
+	}
+	gm.Update(10)
+
+	go pClient.UpdatePrometheusMetrics()
+	time.Sleep(5 * time.Second)
+	metrics, _ := prometheusRegistry.Gather()
+
+	if len(metrics) < 2 {
+		t.Fatalf("prometheus was unable to register the metric")
+	}
+
+	serialized := fmt.Sprint(metrics[1])
+
+	expected := `name:"test_subsys_metric_histogram" help:"metric" type:HISTOGRAM metric:<label:<name:"name" value:"value" > histogram:<sample_count:100 sample_sum:129 bucket:<cumulative_count:1 upper_bound:0.05 > bucket:<cumulative_count:1 upper_bound:0.1 > bucket:<cumulative_count:1 upper_bound:0.25 > bucket:<cumulative_count:1 upper_bound:0.5 > bucket:<cumulative_count:1 upper_bound:0.75 > bucket:<cumulative_count:1 upper_bound:0.9 > bucket:<cumulative_count:5 upper_bound:0.95 > bucket:<cumulative_count:9 upper_bound:0.99 > > > `
+	if serialized != expected {
+		t.Fatalf("Go-metrics value and prometheus metrics value for max do not match:\n+ %s\n- %s", serialized, expected)
+	}
+}
+
 func TestPrometheusTimerGetUpdated(t *testing.T) {
 	prometheusRegistry := prometheus.NewRegistry()
 	metricsRegistry := metrics.NewRegistry()
 	pClient := NewPrometheusProvider(
 		metricsRegistry, "test", "subsys",
 		prometheusRegistry, 1*time.Second,
+		nil,
 	)
 	timer := metrics.NewTimer()
 	metricsRegistry.Register("timer", timer)
