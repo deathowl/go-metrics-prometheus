@@ -2,12 +2,13 @@ package prometheusmetrics
 
 import (
 	"fmt"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/rcrowley/go-metrics"
 	"math"
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/rcrowley/go-metrics"
 )
 
 func TestPrometheusRegistration(t *testing.T) {
@@ -44,12 +45,12 @@ func TestUpdatePrometheusMetrics(t *testing.T) {
 	metricsRegistry.Register("counter", metrics.NewCounter())
 	go pClient.UpdatePrometheusMetrics()
 	time.Sleep(2 * time.Second)
-	gauge := prometheus.NewGauge(prometheus.GaugeOpts{
+	gauge := prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: "test",
 		Subsystem: "subsys",
 		Name:      "counter",
 		Help:      "counter",
-	})
+	}, []string{})
 	err := prometheusRegistry.Register(gauge)
 	if err == nil {
 		t.Fatalf("Go-metrics registry didn't get registered to prometheus registry")
@@ -113,16 +114,19 @@ func TestPrometheusMeterGetUpdated(t *testing.T) {
 
 	metricValues := make(map[string]interface{})
 	for _, metric := range metrics {
-		metricValues[metric.GetName()] = math.Round(metric.GetMetric()[0].Gauge.GetValue())
+		for _, m := range metric.GetMetric() {
+			name := fmt.Sprintf("%s_%s", metric.GetName(), m.GetLabel()[0].GetValue())
+			metricValues[name] = math.Round(m.Gauge.GetValue())
+		}
 	}
 
 	snapshot := gm.Snapshot()
 	expectedValues := map[string]interface{}{
-		"test_subsys_meter_count":     float64(snapshot.Count()),
-		"test_subsys_meter_rate1":     math.Round(snapshot.Rate1()),
-		"test_subsys_meter_rate15":    math.Round(snapshot.Rate15()),
-		"test_subsys_meter_rate5":     math.Round(snapshot.Rate5()),
-		"test_subsys_meter_rate_mean": math.Round(snapshot.RateMean()),
+		"test_subsys_meter_count":  float64(snapshot.Count()),
+		"test_subsys_meter_mean":   math.Round(snapshot.RateMean()),
+		"test_subsys_meter_rate1":  math.Round(snapshot.Rate1()),
+		"test_subsys_meter_rate15": math.Round(snapshot.Rate15()),
+		"test_subsys_meter_rate5":  math.Round(snapshot.Rate5()),
 	}
 
 	if !reflect.DeepEqual(metricValues, expectedValues) {
@@ -191,7 +195,15 @@ func TestPrometheusTimerGetUpdated(t *testing.T) {
 
 	metricValues := make(map[string]interface{})
 	for _, metric := range metrics {
-		metricValues[metric.GetName()] = math.Round(metric.GetMetric()[0].Gauge.GetValue())
+		for _, m := range metric.GetMetric() {
+			var name string
+			if len(m.GetLabel()) == 0 {
+				name = metric.GetName()
+			} else {
+				name = fmt.Sprintf("%s_%s", metric.GetName(), m.GetLabel()[0].GetValue())
+			}
+			metricValues[name] = math.Round(m.Gauge.GetValue())
+		}
 	}
 
 	snapshot := timer.Snapshot()
